@@ -16,6 +16,7 @@ import android.view.Surface;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * Created by Administrator on 2016/12/24 0024.
@@ -55,7 +56,7 @@ public class EncodeAndMuxTest extends AndroidTestCase {
     /**
      * encode AAC video from a surface,the output is saved as an mp4 file
      */
-    public void encodeVideoToMp4(){
+    public void encodeVideoToMp4() {
         //QVGA  2Mbps
         mWidth = 320;
         mHeight = 240;
@@ -67,24 +68,60 @@ public class EncodeAndMuxTest extends AndroidTestCase {
      */
     private void prepareEncoder() throws IOException {
         mBufferInfo = new MediaCodec.BufferInfo();
-        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE,mWidth,mHeight);
+        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, mWidth, mHeight);
 
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        format.setInteger(MediaFormat.KEY_BIT_RATE,mBitRate);
-        format.setInteger(MediaFormat.KEY_FRAME_RATE,FRAME_RATE);
-        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,IFRAME_INTERVAL);
+        format.setInteger(MediaFormat.KEY_BIT_RATE, mBitRate);
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE);
+        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL);
 
         mEncoder = MediaCodec.createEncoderByType(MIME_TYPE);
-        mEncoder.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
+        mEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         mInputSurface = new CodecInputSurface(mEncoder.createInputSurface());
         mEncoder.start();
 
-        String outputPath = new File(OUTPUT_DIR,"test." + mWidth + "x" + mHeight + ".mp4").toString();
+        String outputPath = new File(OUTPUT_DIR, "test." + mWidth + "x" + mHeight + ".mp4").toString();
 
-        mMuxer = new MediaMuxer(outputPath,MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        mMuxer = new MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
 
         mTrackIndex = -1;
         mMuxerStarted = false;
+    }
+
+    private void drainEncoder(boolean endOfStream) {
+        final int TIMEOUT_USEC = 10000;
+
+        if (endOfStream) {
+            mEncoder.signalEndOfInputStream();
+        }
+
+        ByteBuffer[] encoderOutputBuffers = mEncoder.getOutputBuffers();
+        while (true) {
+            int encoderStatus = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+            if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                //no output available
+                if (!endOfStream) {
+                    break;
+                }
+            } else if (encoderStatus == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                encoderOutputBuffers = mEncoder.getOutputBuffers();
+            } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                if (mMuxerStarted){
+                    throw new RuntimeException("format changed twice");
+                }
+                MediaFormat newFormat = mEncoder.getOutputFormat();
+                mTrackIndex = mMuxer.addTrack(newFormat);
+                mMuxer.start();
+                mMuxerStarted = true;
+            }else if (encoderStatus < 0){
+                //ignore it , unexpected result from encoder.dequeueOutputBuffer
+            }else {
+                ByteBuffer encoderData = encoderOutputBuffers[encoderStatus];
+                if (encoderData == null){
+
+                }
+            }
+        }
     }
 
 
@@ -126,28 +163,28 @@ public class EncodeAndMuxTest extends AndroidTestCase {
             };
             EGLConfig[] configs = new EGLConfig[1];
             int[] numConfigs = new int[1];
-            EGL14.eglChooseConfig(mEGLDisplay,attribList,0,configs,0,configs.length,numConfigs,0);
+            EGL14.eglChooseConfig(mEGLDisplay, attribList, 0, configs, 0, configs.length, numConfigs, 0);
             checkEglError("eglCreateContext RGB888 + recordable ES2");
             //Configure Context for OpenGL ES 2.0
             int[] attrib_list = {
-                    EGL14.EGL_CONTEXT_CLIENT_VERSION,2,
+                    EGL14.EGL_CONTEXT_CLIENT_VERSION, 2,
                     EGL14.EGL_NONE
             };
-            mEGLContext = EGL14.eglCreateContext(mEGLDisplay,configs[0],EGL14.EGL_NO_CONTEXT,attrib_list,0);
+            mEGLContext = EGL14.eglCreateContext(mEGLDisplay, configs[0], EGL14.EGL_NO_CONTEXT, attrib_list, 0);
             checkEglError("eglCreateContext");
             //Create a window surface ,attach it to the surface received
             int[] surfaceAttribs = {
                     EGL14.EGL_NONE
             };
-            mEGLSurface = EGL14.eglCreateWindowSurface(mEGLDisplay,configs[0],mSurface,surfaceAttribs,0);
+            mEGLSurface = EGL14.eglCreateWindowSurface(mEGLDisplay, configs[0], mSurface, surfaceAttribs, 0);
             checkEglError("eglCreateWindowSurface");
         }
 
-        public void release(){
-            if (mEGLDisplay != EGL14.EGL_NO_DISPLAY){
-                EGL14.eglMakeCurrent(mEGLDisplay,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);
-                EGL14.eglDestroySurface(mEGLDisplay,mEGLSurface);
-                EGL14.eglDestroyContext(mEGLDisplay,mEGLContext);
+        public void release() {
+            if (mEGLDisplay != EGL14.EGL_NO_DISPLAY) {
+                EGL14.eglMakeCurrent(mEGLDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+                EGL14.eglDestroySurface(mEGLDisplay, mEGLSurface);
+                EGL14.eglDestroyContext(mEGLDisplay, mEGLContext);
                 EGL14.eglReleaseThread();
                 EGL14.eglTerminate(mEGLDisplay);
             }
@@ -161,13 +198,13 @@ public class EncodeAndMuxTest extends AndroidTestCase {
             mSurface = null;
         }
 
-        public void makeCurrent(){
-            EGL14.eglMakeCurrent(mEGLDisplay,mEGLSurface,mEGLSurface,mEGLContext);
+        public void makeCurrent() {
+            EGL14.eglMakeCurrent(mEGLDisplay, mEGLSurface, mEGLSurface, mEGLContext);
             checkEglError("eglMakeCurrent");
         }
 
-        public boolean swapBuffers(){
-            boolean result = EGL14.eglSwapBuffers(mEGLDisplay,mEGLSurface);
+        public boolean swapBuffers() {
+            boolean result = EGL14.eglSwapBuffers(mEGLDisplay, mEGLSurface);
             checkEglError("eglSwapBuffers");
             return result;
         }
@@ -175,15 +212,15 @@ public class EncodeAndMuxTest extends AndroidTestCase {
         /**
          * send pts to EGL , nanoseconds
          */
-        public void setPresentationTime(long nsecs){
-            EGLExt.eglPresentationTimeANDROID(mEGLDisplay,mEGLSurface,nsecs);
+        public void setPresentationTime(long nsecs) {
+            EGLExt.eglPresentationTimeANDROID(mEGLDisplay, mEGLSurface, nsecs);
             checkEglError("eglPresentationTimeANDROID");
         }
 
-        private void checkEglError(String msg){
+        private void checkEglError(String msg) {
             int error;
-            if ((error = EGL14.eglGetError()) != EGL14.EGL_SUCCESS){
-                throw new RuntimeException(msg + ":EGL ERROR : 0x " +Integer.toHexString(error));
+            if ((error = EGL14.eglGetError()) != EGL14.EGL_SUCCESS) {
+                throw new RuntimeException(msg + ":EGL ERROR : 0x " + Integer.toHexString(error));
             }
         }
     }
