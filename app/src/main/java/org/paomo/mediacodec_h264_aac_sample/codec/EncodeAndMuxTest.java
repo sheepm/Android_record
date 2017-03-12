@@ -10,6 +10,7 @@ import android.opengl.EGLContext;
 import android.opengl.EGLDisplay;
 import android.opengl.EGLExt;
 import android.opengl.EGLSurface;
+import android.opengl.GLES20;
 import android.os.Environment;
 import android.test.AndroidTestCase;
 import android.view.Surface;
@@ -61,6 +62,27 @@ public class EncodeAndMuxTest extends AndroidTestCase {
         mWidth = 320;
         mHeight = 240;
         mBitRate = 2000000;
+
+        try {
+            prepareEncoder();
+            mInputSurface.makeCurrent();
+
+            for (int i = 0; i < NUM_FRAMS; i++) {
+                //feed pending encoder output into the muxer
+                drainEncoder(false);
+
+                //generate a new frame of input
+                generateSurfaceFrame(i);
+
+                mInputSurface.setPresentationTime(computePresentationTimeNesc(i));
+                mInputSurface.swapBuffers();
+            }
+            drainEncoder(true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally {
+            releaseEncoder();
+        }
     }
 
     /**
@@ -90,40 +112,108 @@ public class EncodeAndMuxTest extends AndroidTestCase {
 
     private void drainEncoder(boolean endOfStream) {
         final int TIMEOUT_USEC = 10000;
-
         if (endOfStream) {
             mEncoder.signalEndOfInputStream();
         }
-
         ByteBuffer[] encoderOutputBuffers = mEncoder.getOutputBuffers();
         while (true) {
             int encoderStatus = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
             if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                //no output available
-                if (!endOfStream) {
-                    break;
-                }
+                break;
             } else if (encoderStatus == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                 encoderOutputBuffers = mEncoder.getOutputBuffers();
             } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                if (mMuxerStarted){
-                    throw new RuntimeException("format changed twice");
+                if (mMuxerStarted) {
+                    throw new RuntimeException("format change twice");
                 }
                 MediaFormat newFormat = mEncoder.getOutputFormat();
+
+                //now that we have the magic goodies , start the muxer
                 mTrackIndex = mMuxer.addTrack(newFormat);
                 mMuxer.start();
                 mMuxerStarted = true;
-            }else if (encoderStatus < 0){
-                //ignore it , unexpected result from encoder.dequeueOutputBuffer
-            }else {
-                ByteBuffer encoderData = encoderOutputBuffers[encoderStatus];
-                if (encoderData == null){
+            } else if (encoderStatus < 0) {
+                //some unexpected result from encoder.dequeueOutputBuffer
+                //ignore it
+            } else {
+                ByteBuffer encodeData = encoderOutputBuffers[encoderStatus];
+                if (encodeData == null) {
+                    throw new RuntimeException("encoderOutputBuffer " + encoderStatus + " was null");
+                }
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    mBufferInfo.size = 0;
+                }
+                if (mBufferInfo.size != 0) {
+                    if (!mMuxerStarted) {
+                        throw new RuntimeException("muxer not start");
+                    }
+                    encodeData.position(mBufferInfo.offset);
+                    encodeData.limit(mBufferInfo.offset + mBufferInfo.size);
 
+                    mMuxer.writeSampleData(mTrackIndex, encodeData, mBufferInfo);
+                }
+                mEncoder.releaseOutputBuffer(encoderStatus, false);
+
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    if (!endOfStream) {
+                        //reached end of stream unexpected
+                    } else {
+                        //end of stream reached
+                    }
+                    break;
                 }
             }
         }
     }
 
+    private void generateSurfaceFrame(int frameIndex) {
+        frameIndex %= 8;
+
+        int startX, startY;
+        if (frameIndex < 4) {
+            //(0,0) is bottom-left in GL
+            startX = frameIndex * (mWidth / 4);
+            startY = mHeight / 2;
+        } else {
+            startX = (7 - frameIndex) * (mWidth / 4);
+            startY = 0;
+        }
+        GLES20.glClearColor(TEST_R0 / 255.0f, TEST_G0 / 255.0f, TEST_B0 / 255.0f, 1.0f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+
+        GLES20.glEnable(GLES20.GL_SCISSOR_TEST);
+        GLES20.glScissor(startX, startY, mWidth / 4, mHeight / 2);
+        GLES20.glClearColor(TEST_R1 / 255.0f, TEST_G1 / 255.0f, TEST_B1 / 255.0f, 1.0f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
+    }
+
+    /**
+     * nanosecond
+     * @param frameIndex
+     * @return
+     */
+    private long computePresentationTimeNesc(int frameIndex){
+        final long ONE_BILLION = 1000000000;
+        return frameIndex * ONE_BILLION / FRAME_RATE;
+    }
+
+    private void releaseEncoder() {
+        if (mEncoder != null) {
+            mEncoder.stop();
+            mEncoder.release();
+            mEncoder = null;
+        }
+        if (mInputSurface != null) {
+            mInputSurface.release();
+            mInputSurface = null;
+        }
+        if (mMuxer != null) {
+            mMuxer.stop();
+            mMuxer.release();
+            mMuxer = null;
+        }
+    }
 
     private static class CodecInputSurface {
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
