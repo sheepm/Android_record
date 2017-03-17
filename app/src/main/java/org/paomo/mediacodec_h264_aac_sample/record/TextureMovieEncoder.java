@@ -6,6 +6,9 @@ import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
 
+import org.paomo.mediacodec_h264_aac_sample.gles.EglCore;
+import org.paomo.mediacodec_h264_aac_sample.gles.WindowSurface;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -27,6 +30,8 @@ public class TextureMovieEncoder implements Runnable {
 
     private EncoderHandler mHandler;
     private VideoEncoderCore mVideoEncoder;
+    private EglCore mEglCore;
+    private WindowSurface mInputWindowSurface;
 
     private Object mReadFence = new Object();
     private boolean mRunning;
@@ -80,7 +85,9 @@ public class TextureMovieEncoder implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
+        mEglCore = new EglCore(sharedContext,EglCore.FLAG_RECORDABLE);
+        mInputWindowSurface = new WindowSurface(mEglCore,mVideoEncoder.getInputSurface(),true);
+        mInputWindowSurface.makeCurrent();
     }
 
     private static class EncoderHandler extends Handler {

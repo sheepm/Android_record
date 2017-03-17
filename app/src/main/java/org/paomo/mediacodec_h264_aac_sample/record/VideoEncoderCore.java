@@ -49,4 +49,8 @@ public class VideoEncoderCore {
         mTrackIndex = -1;
         mMuxerStarted = false;
     }
+
+    public Surface getInputSurface(){
+        return mInputSurface;
+    }
 }
