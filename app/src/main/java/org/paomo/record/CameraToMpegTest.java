@@ -1,4 +1,4 @@
-package org.paomo.mediacodec_h264_aac_sample;
+package org.paomo.record;
 
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;

@@ -1,4 +1,4 @@
-package org.paomo.mediacodec_h264_aac_sample.camera;
+package org.paomo.record.camera;
 
 import android.content.Context;
 import android.hardware.Camera;

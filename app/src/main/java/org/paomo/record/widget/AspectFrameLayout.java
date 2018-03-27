@@ -1,4 +1,4 @@
-package org.paomo.mediacodec_h264_aac_sample.widget;
+package org.paomo.record.widget;
 
 import android.content.Context;
 import android.util.AttributeSet;

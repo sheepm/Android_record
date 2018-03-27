@@ -1,4 +1,4 @@
-package org.paomo.mediacodec_h264_aac_sample;
+package org.paomo.record;
 
 import android.hardware.Camera;
 import android.os.Bundle;
@@ -6,7 +6,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
-import org.paomo.mediacodec_h264_aac_sample.camera.CameraPreview;
+import org.paomo.record.camera.CameraPreview;
 
 public class MainActivity extends AppCompatActivity {
 
